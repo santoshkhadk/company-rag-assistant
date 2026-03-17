@@ -1,8 +1,8 @@
-/* Renders one chat bubble with inline markdown and source chips */
+import { useState, useEffect, useRef } from 'react';
 
 const EXT_ICON = { pdf: '📄', txt: '📝', docx: '📋', md: '📑', csv: '📊' };
 
-/* Minimal markdown → HTML (no external lib needed) */
+/* Minimal markdown → HTML */
 function md(text) {
   return text
     .replace(/```([\s\S]*?)```/g, (_, c) =>
@@ -16,12 +16,64 @@ function md(text) {
     .replace(/^# (.+)/gm,     '<h1 style="font-size:16px;font-weight:700;margin:10px 0 6px">$1</h1>')
     .replace(/^[-*] (.+)/gm,  '<li style="margin:3px 0;padding-left:4px">$1</li>')
     .replace(/(<li[\s\S]+?<\/li>\n?)+/g, m => `<ul style="padding-left:20px;margin:6px 0">${m}</ul>`)
-    .replace(/\n{2,}/g,        '</p><p style="margin:6px 0">')
-    .replace(/\n/g,            '<br/>');
+    .replace(/\n{2,}/g, '</p><p style="margin:6px 0">')
+    .replace(/\n/g, '<br/>');
 }
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-/* Typing indicator */
+/* Strip markdown for TTS */
+function stripMd(text) {
+  return text
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`[^`]+`/g, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/^#{1,3} /gm, '')
+    .replace(/^[-*] /gm, '')
+    .trim();
+}
+
+/* ── Voice output hook ──────────────────────────── */
+function useTTS() {
+  const [speaking,  setSpeaking]  = useState(false);
+  const [supported, setSupported] = useState(false);
+  const uttRef = useRef(null);
+
+  useEffect(() => {
+    if ('speechSynthesis' in window) setSupported(true);
+    return () => window.speechSynthesis?.cancel();
+  }, []);
+
+  const speak = (text) => {
+    if (!window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    const clean = stripMd(text);
+    const utt   = new SpeechSynthesisUtterance(clean);
+    utt.rate    = 1.0;
+    utt.pitch   = 1.0;
+    utt.volume  = 1.0;
+    // Pick a natural voice if available
+    const voices = window.speechSynthesis.getVoices();
+    const preferred = voices.find(v =>
+      v.name.includes('Google') || v.name.includes('Natural') || v.lang === 'en-US'
+    );
+    if (preferred) utt.voice = preferred;
+    utt.onstart = () => setSpeaking(true);
+    utt.onend   = () => setSpeaking(false);
+    utt.onerror = () => setSpeaking(false);
+    uttRef.current = utt;
+    window.speechSynthesis.speak(utt);
+  };
+
+  const stop = () => {
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
+  };
+
+  return { speak, stop, speaking, supported };
+}
+
+/* ── Typing indicator ───────────────────────────── */
 export function TypingBubble() {
   return (
     <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -36,9 +88,15 @@ export function TypingBubble() {
   );
 }
 
-/* Main component */
+/* ── Main message component ─────────────────────── */
 export default function ChatMessage({ message }) {
   const isUser = message.role === 'user';
+  const { speak, stop, speaking, supported } = useTTS();
+
+  const handleTTS = () => {
+    if (speaking) stop();
+    else speak(message.content);
+  };
 
   return (
     <div className="fade-up" style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexDirection: isUser ? 'row-reverse' : 'row' }}>
@@ -61,30 +119,55 @@ export default function ChatMessage({ message }) {
           }
         </div>
 
-        {/* Source chips */}
-        {!isUser && message.sources && message.sources.length > 0 && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
-            {message.sources.map((src, i) => {
-              const ext = (src.document_name || '').split('.').pop().toLowerCase();
-              return (
-                <span key={i} title={`Score: ${src.score} · Chunk #${src.chunk_index}`}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: '#f5f3ff', border: '1px solid #e0e7ff', fontSize: 11, color: '#6d28d9', cursor: 'help' }}>
-                  {EXT_ICON[ext] || '📄'} {src.document_name}
-                  <span style={{ color: '#a78bfa', fontSize: 10 }}>{Math.round(src.score * 100)}%</span>
-                </span>
-              );
-            })}
-            <span style={{ fontSize: 10, background: '#ede9fe', color: '#7c3aed', padding: '1px 7px', borderRadius: 10, fontWeight: 500 }}>
-              RAG · {message.sources.length} source{message.sources.length > 1 ? 's' : ''}
-            </span>
-          </div>
-        )}
+        {/* Action row for assistant messages */}
+        {!isUser && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
 
-        {/* Model badge */}
-        {!isUser && message.model_used && (
-          <span style={{ fontSize: 10, color: '#9ca3af' }}>
-            ⚡ {message.model_used.replace('-versatile','').replace('-instant',' fast')}
-          </span>
+            {/* TTS button */}
+            {supported && (
+              <button
+                onClick={handleTTS}
+                title={speaking ? 'Stop reading' : 'Read aloud'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  padding: '3px 10px', borderRadius: 20,
+                  border: `1px solid ${speaking ? '#6366f1' : '#e5e7eb'}`,
+                  background: speaking ? '#eef2ff' : '#fff',
+                  color: speaking ? '#4f46e5' : '#6b7280',
+                  fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                  transition: 'all .15s',
+                }}>
+                <span style={{ fontSize: 13 }}>{speaking ? '⏹' : '🔊'}</span>
+                {speaking ? 'Stop' : 'Read aloud'}
+              </button>
+            )}
+
+            {/* Source chips */}
+            {message.sources && message.sources.length > 0 && (
+              <>
+                {message.sources.map((src, i) => {
+                  const ext = (src.document_name || '').split('.').pop().toLowerCase();
+                  return (
+                    <span key={i} title={`Score: ${src.score} · Chunk #${src.chunk_index}`}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 9px', borderRadius: 20, background: '#f5f3ff', border: '1px solid #e0e7ff', fontSize: 11, color: '#6d28d9', cursor: 'help' }}>
+                      {EXT_ICON[ext] || '📄'} {src.document_name}
+                      <span style={{ color: '#a78bfa', fontSize: 10 }}>{Math.round(src.score * 100)}%</span>
+                    </span>
+                  );
+                })}
+                <span style={{ fontSize: 10, background: '#ede9fe', color: '#7c3aed', padding: '1px 7px', borderRadius: 10, fontWeight: 500 }}>
+                  RAG · {message.sources.length} source{message.sources.length > 1 ? 's' : ''}
+                </span>
+              </>
+            )}
+
+            {/* Model badge */}
+            {message.model_used && (
+              <span style={{ fontSize: 10, color: '#9ca3af' }}>
+                ⚡ {message.model_used.replace('-versatile','').replace('-instant',' fast')}
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>
