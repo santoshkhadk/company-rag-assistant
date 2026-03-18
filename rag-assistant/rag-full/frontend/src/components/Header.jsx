@@ -1,4 +1,4 @@
-import { useStore } from '../store';
+import { useStore } from '../store/store';
 
 export default function Header() {
   const { state, dispatch } = useStore();
