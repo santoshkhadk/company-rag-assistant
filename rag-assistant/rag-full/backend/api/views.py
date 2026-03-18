@@ -14,15 +14,43 @@ from .serializers import (
     DocumentSerializer, DocumentUploadSerializer, DocumentChunkSerializer,
     ChatSessionSerializer, MessageSerializer, ChatQuerySerializer,
 )
-from .rag_service import extract_text, chunk_text, rag_query, retrieve_chunks, _build_system_prompt, call_groq, is_conversational, _get_available_docs
-
+from .rag_service import extract_text, chunk_text, rag_query, retrieve_chunks, _build_system_prompt
 logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────
 # DOCUMENT ENDPOINTS
 # ─────────────────────────────────────────────────────────────
+import re
 
+def is_conversational(text):
+    patterns = [
+        r'^(hi|hello|hey|howdy|hiya|sup|yo)\b',
+        r'^(good\s*(morning|afternoon|evening|night|day))',
+        r'^how\s*are\s*(you|u)\b',
+        r'^(thanks|thank\s*you|thx|ty)\b',
+        r'^(bye|goodbye|see\s*ya|later)\b',
+        r'^(help|can\s*you\s*help|i\s*need\s*help)',
+        r'^(who\s*are\s*you|what\s*are\s*you|what\s*can\s*you\s*do)',
+        r'^(ok|okay|sure|got\s*it|alright)',
+        r'^(yes|no|nope|yep|yeah|nah)\s*[.!?]?$',
+    ]
+    t = text.strip().lower()
+    if len(t.split()) <= 4:
+        for p in patterns:
+            if re.search(p, t):
+                return True
+    return False
+
+
+def _get_available_docs():
+    try:
+        docs = Document.objects.filter(status='ready').values_list('name', flat=True)
+        if docs:
+            return '\n'.join(f'- {d}' for d in docs)
+    except Exception:
+        pass
+    return 'No documents uploaded yet.'
 @api_view(['GET'])
 def document_list(request):
     docs = Document.objects.all()
@@ -276,7 +304,7 @@ def chat_stream(request):
     else:
         retrieved = retrieve_chunks(question, document_ids=doc_ids, top_k=top_k)
 
-    system_prompt = _build_system_prompt(retrieved, company_name, conversational=chat_mode)
+    system_prompt = _build_system_prompt(retrieved, company_name)
     messages_payload = [{'role': 'system', 'content': system_prompt}]
     for turn in (history or [])[-6:]:
         messages_payload.append({'role': turn['role'], 'content': turn['content']})
