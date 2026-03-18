@@ -1,4 +1,4 @@
-import { StoreProvider, useStore } from './store';
+import { StoreProvider, useStore } from './store/store';
 import Sidebar          from './components/Sidebar';
 import Header           from './components/Header';
 import ChatPage         from './pages/ChatPage';
