@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useStore } from '../store';
-import { docsAPI, chatAPI } from '../services/api';
+import { docsAPI, chatAPI, streamChat } from '../services/api';
 
 /* ── Documents ─────────────────────────────── */
 export function useDocuments() {
@@ -28,10 +28,9 @@ export function useDocuments() {
     dispatch({ type: 'DOC_UPDATE', payload: doc });
   }, [dispatch]);
 
-  const toggle    = (id) => dispatch({ type: 'DOCS_SEL_NONE' } && dispatch({ type: 'DOC_TOGGLE', payload: id }));
-  const toggleDoc = (id) => dispatch({ type: 'DOC_TOGGLE',   payload: id });
-  const selAll    = ()   => dispatch({ type: 'DOCS_SEL_ALL',  payload: state.documents.filter(d => d.status === 'ready').map(d => d.id) });
-  const selNone   = ()   => dispatch({ type: 'DOCS_SEL_NONE' });
+  const toggleDoc  = (id) => dispatch({ type: 'DOC_TOGGLE', payload: id });
+  const selAll     = ()   => dispatch({ type: 'DOCS_SEL_ALL', payload: state.documents.filter(d => d.status === 'ready').map(d => d.id) });
+  const selNone    = ()   => dispatch({ type: 'DOCS_SEL_NONE' });
 
   return {
     documents: state.documents, loading: state.docsLoading, error: state.docsError,
@@ -40,7 +39,7 @@ export function useDocuments() {
   };
 }
 
-/* ── Chat ──────────────────────────────────── */
+/* ── Chat with streaming ───────────────────── */
 export function useChat() {
   const { state, dispatch } = useStore();
 
@@ -68,11 +67,19 @@ export function useChat() {
   const send = useCallback(async (question) => {
     const { groqApiKey, model, topK, companyName, selectedDocIds, activeSessionId } = state;
 
+    // Add user message immediately
     dispatch({ type: 'MSG_PUSH', payload: { id: `u-${Date.now()}`, role: 'user', content: question, sources: [] } });
     dispatch({ type: 'CHAT_LOADING' });
 
+    // Add empty AI message bubble that we'll stream into
+    const streamId = `stream-${Date.now()}`;
+    dispatch({
+      type: 'MSG_PUSH',
+      payload: { id: streamId, role: 'assistant', content: '', sources: [], streaming: true },
+    });
+
     try {
-      const result = await chatAPI.query({
+      const body = {
         question,
         session_id:   activeSessionId || undefined,
         document_ids: selectedDocIds.length ? selectedDocIds : undefined,
@@ -80,24 +87,55 @@ export function useChat() {
         top_k:        topK,
         api_key:      groqApiKey,
         company_name: companyName,
-      });
+      };
 
-      if (!activeSessionId) {
-        dispatch({ type: 'SET_SESSION', payload: result.session_id });
-        const sess = await chatAPI.getSession(result.session_id);
-        dispatch({ type: 'SESSION_ADD', payload: sess.session });
+      let fullContent = '';
+      let finalMeta   = null;
+
+      // Stream tokens
+      for await (const event of streamChat(body)) {
+        if (event.error) throw new Error(event.error);
+
+        if (event.token) {
+          fullContent += event.token;
+          // Update the streaming bubble with accumulated text
+          dispatch({
+            type: 'MSG_UPDATE',
+            payload: { id: streamId, content: fullContent },
+          });
+        }
+
+        if (event.done) {
+          finalMeta = event;
+        }
       }
 
-      dispatch({
-        type: 'MSG_PUSH',
-        payload: {
-          id: result.message_id, role: 'assistant',
-          content: result.answer, sources: result.sources,
-          model_used: result.model, created_at: new Date().toISOString(),
-        },
-      });
+      // Finalize the message with real ID, sources, and remove streaming flag
+      if (finalMeta) {
+        dispatch({
+          type: 'MSG_FINALIZE',
+          payload: {
+            tempId:     streamId,
+            id:         finalMeta.message_id,
+            session_id: finalMeta.session_id,
+            sources:    finalMeta.sources || [],
+            model_used: finalMeta.model,
+            content:    fullContent,
+          },
+        });
+
+        // Register new session in sidebar if first message
+        if (!activeSessionId) {
+          dispatch({ type: 'SET_SESSION', payload: finalMeta.session_id });
+          const sess = await chatAPI.getSession(finalMeta.session_id);
+          dispatch({ type: 'SESSION_ADD', payload: sess.session });
+        }
+      }
+
       dispatch({ type: 'CHAT_DONE' });
     } catch (e) {
+      // Remove the streaming bubble on error
+      dispatch({ type: 'MSG_REMOVE', payload: streamId });
       dispatch({ type: 'CHAT_ERROR', payload: e.message });
     }
   }, [state, dispatch]);

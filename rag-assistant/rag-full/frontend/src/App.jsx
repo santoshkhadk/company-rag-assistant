@@ -4,35 +4,31 @@ import Header           from './components/Header';
 import ChatPage         from './pages/ChatPage';
 import DocumentUpload   from './components/DocumentUpload';
 import SettingsPanel    from './components/SettingsPanel';
+import DashboardPage    from './pages/DashboardPage';
 
-/* Inner app reads from store */
 function AppInner() {
   const { state, dispatch } = useStore();
-
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-
-      {/* Left sidebar */}
+    <div style={{ display:'flex', height:'100vh', overflow:'hidden' }}>
       <Sidebar />
-
-      {/* Main content */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
         <Header />
         <ChatPage />
       </div>
 
-      {/* Modals */}
       {state.uploadOpen && (
-        <DocumentUpload onClose={() => dispatch({ type: 'SET_UPLOAD', payload: false })} />
+        <DocumentUpload onClose={() => dispatch({ type:'SET_UPLOAD', payload:false })} />
       )}
       {state.settingsOpen && (
-        <SettingsPanel onClose={() => dispatch({ type: 'SET_SETTINGS', payload: false })} />
+        <SettingsPanel onClose={() => dispatch({ type:'SET_SETTINGS', payload:false })} />
+      )}
+      {state.showDashboard && (
+        <DashboardPage onClose={() => dispatch({ type:'SET_DASHBOARD', payload:false })} />
       )}
     </div>
   );
 }
 
-/* Wrap with provider */
 export default function App() {
   return (
     <StoreProvider>

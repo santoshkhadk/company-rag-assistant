@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     # Stats
     path('stats/',                                  views.stats,             name='stats'),
+    path('dashboard/',                              views.dashboard,         name='dashboard'),
 
     # Documents
     path('documents/',                              views.document_list,     name='doc-list'),
@@ -17,6 +18,11 @@ urlpatterns = [
     path('sessions/create/',                        views.session_create,    name='session-create'),
     path('sessions/<uuid:session_id>/',             views.session_detail,    name='session-detail'),
 
-    # RAG chat
+    # Chat — standard + streaming
     path('chat/',                                   views.chat_query,        name='chat-query'),
+    path('chat/stream/',                            views.chat_stream,       name='chat-stream'),
+
+    # Feedback
+    path('messages/<uuid:message_id>/feedback/',    views.message_feedback,  name='message-feedback'),
+    path('feedback/',                               views.feedback_list,     name='feedback-list'),
 ]
