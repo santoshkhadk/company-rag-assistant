@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useStore } from '../store';
+import { useStore } from '../store/store';
 import { docsAPI, chatAPI, streamChat } from '../services/api';
 
 /* ── Documents ─────────────────────────────── */
