@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useStore } from '../store';
+import { useStore } from '../store/store';
 import { feedbackAPI } from '../services/api';
 
 const EXT_ICON = { pdf: '📄', txt: '📝', docx: '📋', md: '📑', csv: '📊' };
