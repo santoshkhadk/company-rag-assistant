@@ -81,7 +81,7 @@ def extract_text(file_path: str, file_type: str) -> str:
 # ─────────────────────────────────────────────────────────────
 # STAGE 1 – CHUNKING
 # ─────────────────────────────────────────────────────────────
-
+#is conversational
 def chunk_text(
     text: str,
     chunk_size: Optional[int] = None,
