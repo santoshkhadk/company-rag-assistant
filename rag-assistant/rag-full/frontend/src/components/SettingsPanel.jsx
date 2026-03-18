@@ -1,4 +1,4 @@
-import { useStore } from '../store';
+import { useStore } from '../store/store';
 
 const MODELS = [
   ['llama-3.3-70b-versatile', 'Llama 3.3 · 70B',  'Best quality'],
