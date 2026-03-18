@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react';
-import { useStore } from '../store';
+import { useStore } from '../store/store';
 import { useChat } from '../hooks/useRag';
 import ChatMessage, { TypingBubble } from '../components/ChatMessage';
 import ChatInput from '../components/ChatInput';
