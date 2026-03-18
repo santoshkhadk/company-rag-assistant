@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useStore } from '../store';
+import { useStore } from '../store/store';
 import { useDocuments, useChat } from '../hooks/useRag';
 
 const EXT_ICON = { pdf: '📄', txt: '📝', docx: '📋', md: '📑', csv: '📊' };
