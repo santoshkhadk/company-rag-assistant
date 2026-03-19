@@ -240,36 +240,46 @@ def retrieve_chunks(
 GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions'
 
 
-def _build_system_prompt(retrieved: List[Dict], company_name: str) -> str:
-    """Build the system prompt injecting retrieved context."""
-    if not retrieved:
-        context_block = (
-            "No relevant documents were found in the knowledge base for this query."
+def _build_system_prompt(retrieved, company_name, conversational=False):
+
+    if not retrieved and not conversational:
+        return f"""You are a smart AI assistant for {company_name}.
+
+You have TWO modes:
+1. GENERAL mode - answer from your own training knowledge
+2. DOCUMENT mode - answer from company documents
+
+Since no relevant documents were found for this query, use GENERAL mode.
+Answer the question directly using your own knowledge like a normal AI assistant.
+Be helpful, accurate and friendly.
+Do NOT say you don't have information - you are an AI with broad general knowledge.
+Only say you lack info if it's truly something you cannot know (like real-time data)."""
+
+    if conversational:
+        return f"""You are a friendly AI assistant for {company_name}.
+Answer warmly and helpfully.
+You can answer greetings, general questions, and questions about company documents.
+Use your broad AI knowledge to help with anything."""
+
+    sections = []
+    for i, chunk in enumerate(retrieved, 1):
+        sections.append(
+            f"[Source {i} | {chunk['document_name']} | chunk #{chunk['chunk_index']}]\n"
+            f"{chunk['content']}"
         )
-    else:
-        sections = []
-        for i, chunk in enumerate(retrieved, 1):
-            sections.append(
-                f"[Source {i} | {chunk['document_name']} | chunk #{chunk['chunk_index']}]\n"
-                f"{chunk['content']}"
-            )
-        context_block = "\n\n---\n\n".join(sections)
+    context_block = "\n\n---\n\n".join(sections)
 
-    return f"""You are an expert AI assistant for {company_name}.
-Your job is to answer questions accurately using ONLY the context provided below.
+    return f"""You are a helpful AI assistant for {company_name}.
 
-RULES:
-1. Base every answer strictly on the provided context.
-2. If the answer is not in the context, say:
-   "I don't have information about that in the current knowledge base."
-3. Cite the source document name when stating specific facts.
-4. Be concise, professional, and friendly.
-5. Use bullet points when listing multiple items.
-6. Never invent information.
+INSTRUCTIONS:
+1. Answer using the document context below for company-specific questions.
+2. For anything not in documents, answer from your own general knowledge.
+3. Cite the source document name when using document content.
+4. Be friendly, concise and professional.
 
-=== KNOWLEDGE BASE CONTEXT ===
+=== DOCUMENT CONTEXT ===
 {context_block}
-=== END OF CONTEXT ===
+=== END CONTEXT ===
 """
 
 
