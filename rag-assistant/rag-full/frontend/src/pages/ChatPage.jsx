@@ -1,24 +1,59 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useStore } from '../store/store';
 import { useChat } from '../hooks/useRag';
 import ChatMessage, { TypingBubble } from '../components/ChatMessage';
 import ChatInput from '../components/ChatInput';
 
 export default function ChatPage() {
-  const { state } = useStore();
+  const { state }  = useStore();
   const { messages, loading, error, send } = useChat();
-  const bottomRef = useRef();
+  const bottomRef  = useRef();
+  const scrollRef  = useRef();
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [unreadCount,   setUnreadCount]   = useState(0);
+  const isAtBottom_ = useRef(true);
 
+  // ── Detect if user has scrolled up ────────────────────────
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const atBottom = distFromBottom < 80;
+    isAtBottom_.current = atBottom;
+    setShowScrollBtn(!atBottom);
+    if (atBottom) setUnreadCount(0);
+  }, []);
+
+  // ── Auto-scroll only when user is already at bottom ───────
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isAtBottom_.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setUnreadCount(0);
+    } else {
+      // User scrolled up — show unread count instead of forcing scroll
+      if (messages.length > 0) {
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg.role === 'assistant') {
+          setUnreadCount(prev => prev + 1);
+        }
+      }
+    }
   }, [messages, loading]);
+
+  // ── Scroll to bottom button click ─────────────────────────
+  const scrollToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    setShowScrollBtn(false);
+    setUnreadCount(0);
+    isAtBottom_.current = true;
+  };
 
   const noKey = !state.groqApiKey;
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8f9ff' }}>
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#f8f9ff', position: 'relative' }}>
 
-      {/* Warning banner if no API key */}
+      {/* No API key warning */}
       {noKey && (
         <div style={{ padding: '10px 20px', background: '#fffbeb', borderBottom: '1px solid #fde68a', fontSize: 13, color: '#92400e', display: 'flex', alignItems: 'center', gap: 8 }}>
           ⚠️ <strong>Groq API key not set.</strong>&nbsp;
@@ -28,8 +63,12 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 8px' }}>
+      {/* Messages area */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        style={{ flex: 1, overflowY: 'auto', padding: '20px 20px 8px' }}
+      >
         {messages.length === 0 && !loading
           ? <EmptyState noKey={noKey} />
           : (
@@ -47,8 +86,51 @@ export default function ChatPage() {
         }
       </div>
 
+      {/* ── Scroll to bottom button ── */}
+      {showScrollBtn && (
+        <button
+          onClick={scrollToBottom}
+          style={{
+            position: 'absolute',
+            bottom: 90,
+            right: 24,
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '8px 14px',
+            borderRadius: 20,
+            border: 'none',
+            background: '#4f46e5',
+            color: '#fff',
+            fontSize: 13,
+            fontWeight: 500,
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(79,70,229,0.4)',
+            fontFamily: 'inherit',
+            animation: 'slideUp 0.2s ease',
+          }}
+        >
+          {unreadCount > 0 && (
+            <span style={{
+              background: '#fff',
+              color: '#4f46e5',
+              borderRadius: 10,
+              padding: '1px 7px',
+              fontSize: 11,
+              fontWeight: 700,
+              minWidth: 18,
+              textAlign: 'center',
+            }}>
+              {unreadCount}
+            </span>
+          )}
+          ↓ {unreadCount > 0 ? 'New messages' : 'Scroll to bottom'}
+        </button>
+      )}
+
       {/* Input */}
-      <div style={{ maxWidth: 760 + 40, width: '100%', alignSelf: 'center', width: '100%' }}>
+      <div style={{ width: '100%' }}>
         <ChatInput
           onSend={send}
           loading={loading}
@@ -56,6 +138,13 @@ export default function ChatPage() {
           hasMessages={messages.length > 0}
         />
       </div>
+
+      <style>{`
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(10px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }
@@ -71,13 +160,12 @@ function EmptyState({ noKey }) {
         Upload your company documents in the sidebar, then ask questions.<br />
         The assistant uses <strong>RAG</strong> to retrieve relevant context and answers with <strong>Groq LLM</strong>.
       </p>
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 6, maxWidth: 420, width: '100%' }}>
         {[
-          ['📂', 'Upload Docs',      'Add PDF, DOCX, TXT, MD, CSV files'],
-          ['☑️', 'Select Sources',   'Restrict which docs the AI searches'],
-          ['❓', 'Ask Questions',    'Get grounded, cited answers'],
-          ['💬', 'Chat History',     'All sessions saved automatically'],
+          ['📂', 'Upload Docs',    'Add PDF, DOCX, TXT, MD, CSV files'],
+          ['☑️', 'Select Sources', 'Restrict which docs the AI searches'],
+          ['❓', 'Ask Questions',  'Get grounded, cited answers'],
+          ['💬', 'Chat History',   'All sessions saved automatically'],
         ].map(([icon, title, desc]) => (
           <div key={title} style={{ padding: '12px 14px', borderRadius: 10, background: '#fff', border: '1px solid #e5e7eb', textAlign: 'left' }}>
             <div style={{ fontSize: 20, marginBottom: 5 }}>{icon}</div>
@@ -86,7 +174,6 @@ function EmptyState({ noKey }) {
           </div>
         ))}
       </div>
-
       {noKey && (
         <p style={{ fontSize: 13, color: '#d97706', background: '#fffbeb', padding: '8px 16px', borderRadius: 8, border: '1px solid #fde68a', margin: 0 }}>
           👆 Click <strong>⚙️ Settings</strong> to add your free Groq API key
